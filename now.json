@@ -32,5 +32,10 @@
         }
       ]
     }
-  ]
+  ],
+  "build": {
+    "env": {
+      "FORCE_BUILD_IN_REGION": "bru1"
+    }
+  }
 }
