@@ -35,8 +35,7 @@
   ],
   "build": {
     "env": {
-      "FORCE_BUILD_IN_REGION": "bru1",
-      "DUMMY": "2"
+      "DUMMY": "3"
     }
   }
 }
