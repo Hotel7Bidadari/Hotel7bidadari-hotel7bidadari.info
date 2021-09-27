@@ -1016,7 +1016,7 @@ export const frameworks = [
     defaultRoutes: [
       {
         src: '/static/(.*)',
-        headers: { 'cache-control': 's-maxage=31536000, immutable' },
+        headers: { 'cache-control': 'max-age=31536000, immutable' },
         continue: true,
       },
       {
