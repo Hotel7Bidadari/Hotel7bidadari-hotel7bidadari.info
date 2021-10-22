@@ -4,7 +4,14 @@ import { tmpdir } from 'os';
 import { spawn } from 'child_process';
 import { Readable } from 'stream';
 import once from '@tootallnate/once';
-import { join, dirname, basename, normalize, sep, parse as pathParse } from 'path';
+import {
+  join,
+  dirname,
+  basename,
+  normalize,
+  sep,
+  parse as pathParse,
+} from 'path';
 import {
   readFile,
   writeFile,
@@ -63,9 +70,7 @@ interface PortInfo {
  * Since `go build` does not support files that begin with a square bracket,
  * we must rename to something temporary to support Path Segments.
  */
-function getRenamedEntrypoint(
-  entrypoint: string,
-) {
+function getRenamedEntrypoint(entrypoint: string) {
   if (basename(entrypoint).startsWith('[')) {
     return entrypoint.replace('/[', '/vercel-bracket[');
   }
@@ -102,18 +107,18 @@ async function buildEntrypoint(entrypoint: string) {
   const cwd = process.cwd();
   const workPath = cwd;
   const outputPath = join(cwd, '.output');
-	const { dir, name } = pathParse(entrypoint);
-	const entrypointWithoutExt = join(
-		dir,
-		name,
-		// "index" is enforced as a suffix so that nesting works properly
-		// i.e. "api/foo.go"     -> "api/foo/index"
-		//      "api/foo/bar.go" -> "api/foo/bar/index"
-		name === 'index' ? '' : 'index'
-	);
-	const outDir = join(outputPath, 'server/pages', entrypointWithoutExt);
-	console.log(`Compiling ${entrypoint} to ${outDir}`);
-	await mkdirp(outDir);
+  const { dir, name } = pathParse(entrypoint);
+  const entrypointWithoutExt = join(
+    dir,
+    name,
+    // "index" is enforced as a suffix so that nesting works properly
+    // i.e. "api/foo.go"     -> "api/foo/index"
+    //      "api/foo/bar.go" -> "api/foo/bar/index"
+    name === 'index' ? '' : 'index'
+  );
+  const outDir = join(outputPath, 'server/pages', entrypointWithoutExt);
+  console.log(`Compiling ${entrypoint} to ${outDir}`);
+  await mkdirp(outDir);
 
   const renamedEntrypoint = getRenamedEntrypoint(entrypoint);
   const entrypointArr = entrypoint.split(sep);
