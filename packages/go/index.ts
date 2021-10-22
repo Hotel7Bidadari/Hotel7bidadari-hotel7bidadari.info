@@ -1,10 +1,10 @@
-import execa from 'execa';
+//import execa from 'execa';
 import retry from 'async-retry';
-import { homedir, tmpdir } from 'os';
+import { tmpdir } from 'os';
 import { spawn } from 'child_process';
 import { Readable } from 'stream';
 import once from '@tootallnate/once';
-import { join, dirname, basename, normalize, sep } from 'path';
+import { join, dirname, basename, normalize, sep, parse as pathParse } from 'path';
 import {
   readFile,
   writeFile,
@@ -14,28 +14,23 @@ import {
   remove,
 } from 'fs-extra';
 import {
-  BuildOptions,
-  Meta,
   Files,
   PrepareCacheOptions,
   StartDevServerOptions,
   StartDevServerResult,
   glob,
-  download,
-  createLambda,
   getWriteableDirectory,
   shouldServe,
   debug,
 } from '@vercel/build-utils';
-
-const TMP = tmpdir();
-
 import {
   createGo,
   getAnalyzedEntrypoint,
   cacheDir,
   OUT_EXTENSION,
 } from './go-helpers';
+
+const TMP = tmpdir();
 const handlerFileName = `handler${OUT_EXTENSION}`;
 
 export { shouldServe };
@@ -44,7 +39,6 @@ interface Analyzed {
   found?: boolean;
   packageName: string;
   functionName: string;
-  watch: string[];
 }
 
 interface PortInfo {
@@ -52,58 +46,39 @@ interface PortInfo {
 }
 
 // Initialize private git repo for Go Modules
-async function initPrivateGit(credentials: string) {
-  const gitCredentialsPath = join(homedir(), '.git-credentials');
-
-  await execa('git', [
-    'config',
-    '--global',
-    'credential.helper',
-    `store --file ${gitCredentialsPath}`,
-  ]);
-
-  await writeFile(gitCredentialsPath, credentials);
-}
+//async function initPrivateGit(credentials: string) {
+//  const gitCredentialsPath = join(homedir(), '.git-credentials');
+//
+//  await execa('git', [
+//    'config',
+//    '--global',
+//    'credential.helper',
+//    `store --file ${gitCredentialsPath}`,
+//  ]);
+//
+//  await writeFile(gitCredentialsPath, credentials);
+//}
 
 /**
  * Since `go build` does not support files that begin with a square bracket,
  * we must rename to something temporary to support Path Segments.
- * The output file is not renamed because v3 builders can't rename outputs
- * which works great for this feature. We also need to add a suffix during `vercel dev`
- * since the entrypoint is already stripped of its suffix before build() is called.
  */
-async function getRenamedEntrypoint(
+function getRenamedEntrypoint(
   entrypoint: string,
-  files: Files,
-  meta: Meta
 ) {
-  const filename = basename(entrypoint);
-  if (filename.startsWith('[')) {
-    const suffix = meta.isDev && !entrypoint.endsWith('.go') ? '.go' : '';
-    const newEntrypoint = entrypoint.replace('/[', '/now-bracket[') + suffix;
-    const file = files[entrypoint];
-    delete files[entrypoint];
-    files[newEntrypoint] = file;
-    debug(`Renamed entrypoint from ${entrypoint} to ${newEntrypoint}`);
-    entrypoint = newEntrypoint;
+  if (basename(entrypoint).startsWith('[')) {
+    return entrypoint.replace('/[', '/vercel-bracket[');
   }
-
-  return entrypoint;
+  return null;
 }
 
-export const version = 3;
-
-export async function build({
-  files,
-  entrypoint,
-  config,
-  workPath,
-  meta = {},
-}: BuildOptions) {
-  if (process.env.GIT_CREDENTIALS && !meta.isDev) {
-    debug('Initialize Git credentials...');
-    await initPrivateGit(process.env.GIT_CREDENTIALS);
-  }
+export async function build() {
+  // TODO NATE: probably only want to do this
+  // when inside the Vercel build container
+  //if (process.env.GIT_CREDENTIALS) {
+  //  debug('Initialize Git credentials...');
+  //  await initPrivateGit(process.env.GIT_CREDENTIALS);
+  //}
 
   if (process.env.GO111MODULE) {
     console.log(`\nManually assigning 'GO111MODULE' is not recommended.
@@ -116,19 +91,38 @@ We highly recommend you leverage Go Modules in your project.
 Learn more: https://github.com/golang/go/wiki/Modules
 `);
   }
-  entrypoint = await getRenamedEntrypoint(entrypoint, files, meta);
+
+  const entrypoints = await glob('api/**/*.go', process.cwd());
+  for (const entrypoint of Object.keys(entrypoints)) {
+    await buildEntrypoint(entrypoint);
+  }
+}
+
+async function buildEntrypoint(entrypoint: string) {
+  const cwd = process.cwd();
+  const workPath = cwd;
+  const outputPath = join(cwd, '.output');
+	const { dir, name } = pathParse(entrypoint);
+	const entrypointWithoutExt = join(
+		dir,
+		name,
+		// "index" is enforced as a suffix so that nesting works properly
+		// i.e. "api/foo.go"     -> "api/foo/index"
+		//      "api/foo/bar.go" -> "api/foo/bar/index"
+		name === 'index' ? '' : 'index'
+	);
+	const outDir = join(outputPath, 'server/pages', entrypointWithoutExt);
+	console.log(`Compiling ${entrypoint} to ${outDir}`);
+	await mkdirp(outDir);
+
+  const renamedEntrypoint = getRenamedEntrypoint(entrypoint);
   const entrypointArr = entrypoint.split(sep);
 
-  // eslint-disable-next-line prefer-const
-  let [goPath, outDir] = await Promise.all([
-    getWriteableDirectory(),
-    getWriteableDirectory(),
-  ]);
+  const goPath = await getWriteableDirectory();
 
-  const forceMove = Boolean(meta.isDev);
-  const srcPath = join(goPath, 'src', 'lambda');
-  let downloadPath = meta.isDev || meta.skipDownload ? workPath : srcPath;
-  let downloadedFiles = await download(files, downloadPath, meta);
+  const forceMove = false;
+  const downloadPath = join(goPath, 'src', 'lambda');
+  //const downloadedFiles = await download(files, downloadPath, meta);
 
   debug(`Parsing AST for "${entrypoint}"`);
   let analyzed: string;
@@ -155,8 +149,7 @@ Learn more: https://github.com/golang/go/wiki/Modules
   if (!analyzed) {
     const err = new Error(
       `Could not find an exported function in "${entrypoint}"
-Learn more: https://vercel.com/docs/runtimes#official-runtimes/go
-      `
+Learn more: https://vercel.com/docs/runtimes#official-runtimes/go`
     );
     console.log(err.message);
     throw err;
@@ -164,81 +157,80 @@ Learn more: https://vercel.com/docs/runtimes#official-runtimes/go
 
   const parsedAnalyzed = JSON.parse(analyzed) as Analyzed;
 
-  if (meta.isDev) {
-    // Create cache so Go rebuilds fast with `vercel dev`
-    // Old versions of the CLI don't assign this property
-    const { devCacheDir = join(workPath, '.now', 'cache') } = meta;
-    goPath = join(devCacheDir, 'go', basename(entrypoint, '.go'));
-    const destLambda = join(goPath, 'src', 'lambda');
-    await download(downloadedFiles, destLambda);
-    downloadedFiles = await glob('**', destLambda);
-    downloadPath = destLambda;
-  }
+  //if (meta.isDev) {
+  //  // Create cache so Go rebuilds fast with `vercel dev`
+  //  // Old versions of the CLI don't assign this property
+  //  const { devCacheDir = join(workPath, '.now', 'cache') } = meta;
+  //  goPath = join(devCacheDir, 'go', basename(entrypoint, '.go'));
+  //  const destLambda = join(goPath, 'src', 'lambda');
+  //  await download(downloadedFiles, destLambda);
+  //  downloadedFiles = await glob('**', destLambda);
+  //  downloadPath = destLambda;
+  //}
 
+  const isGoModExist = false;
   // find `go.mod` in downloadedFiles
-  const entrypointDirname = dirname(downloadedFiles[entrypoint].fsPath);
-  let isGoModExist = false;
-  let goModPath = '';
-  let isGoModInRootDir = false;
-  for (const file of Object.keys(downloadedFiles)) {
-    const { fsPath } = downloadedFiles[file];
-    const fileDirname = dirname(fsPath);
-    if (file === 'go.mod') {
-      isGoModExist = true;
-      isGoModInRootDir = true;
-      goModPath = fileDirname;
-    } else if (file.endsWith('go.mod')) {
-      if (entrypointDirname === fileDirname) {
-        isGoModExist = true;
-        goModPath = fileDirname;
-        debug(`Found file dirname equals entrypoint dirname: ${fileDirname}`);
-        break;
-      }
+  //const entrypointDirname = dirname(downloadedFiles[entrypoint].fsPath);
+  //let isGoModExist = false;
+  //let goModPath = '';
+  //let isGoModInRootDir = false;
+  //for (const file of Object.keys(downloadedFiles)) {
+  //  const { fsPath } = downloadedFiles[file];
+  //  const fileDirname = dirname(fsPath);
+  //  if (file === 'go.mod') {
+  //    isGoModExist = true;
+  //    isGoModInRootDir = true;
+  //    goModPath = fileDirname;
+  //  } else if (file.endsWith('go.mod')) {
+  //    if (entrypointDirname === fileDirname) {
+  //      isGoModExist = true;
+  //      goModPath = fileDirname;
+  //      debug(`Found file dirname equals entrypoint dirname: ${fileDirname}`);
+  //      break;
+  //    }
 
-      if (!isGoModInRootDir && config.zeroConfig && file === 'api/go.mod') {
-        // We didn't find `/go.mod` but we found `/api/go.mod` so move it to the root
-        isGoModExist = true;
-        isGoModInRootDir = true;
-        goModPath = join(fileDirname, '..');
-        const pathParts = fsPath.split(sep);
-        pathParts.pop(); // Remove go.mod
-        pathParts.pop(); // Remove api
-        pathParts.push('go.mod');
-        const newFsPath = pathParts.join(sep);
-        debug(`Moving api/go.mod to root: ${fsPath} to ${newFsPath}`);
-        await move(fsPath, newFsPath, { overwrite: forceMove });
-        const oldSumPath = join(dirname(fsPath), 'go.sum');
-        const newSumPath = join(dirname(newFsPath), 'go.sum');
-        if (await pathExists(oldSumPath)) {
-          debug(`Moving api/go.sum to root: ${oldSumPath} to ${newSumPath}`);
-          await move(oldSumPath, newSumPath, { overwrite: forceMove });
-        }
-        break;
-      }
-    }
-  }
+  //    //if (!isGoModInRootDir && config.zeroConfig && file === 'api/go.mod') {
+  //    //  // We didn't find `/go.mod` but we found `/api/go.mod` so move it to the root
+  //    //  isGoModExist = true;
+  //    //  isGoModInRootDir = true;
+  //    //  goModPath = join(fileDirname, '..');
+  //    //  const pathParts = fsPath.split(sep);
+  //    //  pathParts.pop(); // Remove go.mod
+  //    //  pathParts.pop(); // Remove api
+  //    //  pathParts.push('go.mod');
+  //    //  const newFsPath = pathParts.join(sep);
+  //    //  debug(`Moving api/go.mod to root: ${fsPath} to ${newFsPath}`);
+  //    //  await move(fsPath, newFsPath, { overwrite: forceMove });
+  //    //  const oldSumPath = join(dirname(fsPath), 'go.sum');
+  //    //  const newSumPath = join(dirname(newFsPath), 'go.sum');
+  //    //  if (await pathExists(oldSumPath)) {
+  //    //    debug(`Moving api/go.sum to root: ${oldSumPath} to ${newSumPath}`);
+  //    //    await move(oldSumPath, newSumPath, { overwrite: forceMove });
+  //    //  }
+  //    //  break;
+  //    //}
+  //  }
+  //}
 
-  const input = entrypointDirname;
-  const includedFiles: Files = {};
-
-  if (config && config.includeFiles) {
-    const patterns = Array.isArray(config.includeFiles)
-      ? config.includeFiles
-      : [config.includeFiles];
-    for (const pattern of patterns) {
-      const fsFiles = await glob(pattern, input);
-      for (const [assetName, asset] of Object.entries(fsFiles)) {
-        includedFiles[assetName] = asset;
-      }
-    }
-  }
+  //const includedFiles: Files = {};
+  //if (config && config.includeFiles) {
+  //  const patterns = Array.isArray(config.includeFiles)
+  //    ? config.includeFiles
+  //    : [config.includeFiles];
+  //  for (const pattern of patterns) {
+  //    const fsFiles = await glob(pattern, input);
+  //    for (const [assetName, asset] of Object.entries(fsFiles)) {
+  //      includedFiles[assetName] = asset;
+  //    }
+  //  }
+  //}
 
   const handlerFunctionName = parsedAnalyzed.functionName;
   debug(`Found exported function "${handlerFunctionName}" in "${entrypoint}"`);
 
-  if (!isGoModExist && 'vendor' in downloadedFiles) {
-    throw new Error('`go.mod` is required to use a `vendor` directory.');
-  }
+  //if (!isGoModExist && 'vendor' in downloadedFiles) {
+  //  throw new Error('`go.mod` is required to use a `vendor` directory.');
+  //}
 
   // check if package name other than main
   // using `go.mod` way building the handler
@@ -345,21 +337,21 @@ Learn more: https://vercel.com/docs/runtimes#official-runtimes/go
       baseGoModPath = entrypointDirname;
     }
 
-    if (meta.isDev) {
-      const isGoModBk = await pathExists(join(baseGoModPath, 'go.mod.bk'));
-      if (isGoModBk) {
-        await move(
-          join(baseGoModPath, 'go.mod.bk'),
-          join(baseGoModPath, 'go.mod'),
-          { overwrite: forceMove }
-        );
-        await move(
-          join(baseGoModPath, 'go.sum.bk'),
-          join(baseGoModPath, 'go.sum'),
-          { overwrite: forceMove }
-        );
-      }
-    }
+    //if (meta.isDev) {
+    //  const isGoModBk = await pathExists(join(baseGoModPath, 'go.mod.bk'));
+    //  if (isGoModBk) {
+    //    await move(
+    //      join(baseGoModPath, 'go.mod.bk'),
+    //      join(baseGoModPath, 'go.mod'),
+    //      { overwrite: forceMove }
+    //    );
+    //    await move(
+    //      join(baseGoModPath, 'go.sum.bk'),
+    //      join(baseGoModPath, 'go.sum'),
+    //      { overwrite: forceMove }
+    //    );
+    //  }
+    //}
 
     debug('Tidy `go.mod` file...');
     try {
@@ -375,25 +367,25 @@ Learn more: https://vercel.com/docs/runtimes#official-runtimes/go
 
     try {
       const src = [join(baseGoModPath, mainModGoFileName)];
-
       await go.build(src, destPath);
     } catch (err) {
       console.log('failed to `go build`');
       throw err;
     }
-    if (meta.isDev) {
-      // caching for `vercel dev`
-      await move(
-        join(baseGoModPath, 'go.mod'),
-        join(baseGoModPath, 'go.mod.bk'),
-        { overwrite: forceMove }
-      );
-      await move(
-        join(baseGoModPath, 'go.sum'),
-        join(baseGoModPath, 'go.sum.bk'),
-        { overwrite: forceMove }
-      );
-    }
+
+    //if (meta.isDev) {
+    //  // caching for `vercel dev`
+    //  await move(
+    //    join(baseGoModPath, 'go.mod'),
+    //    join(baseGoModPath, 'go.mod.bk'),
+    //    { overwrite: forceMove }
+    //  );
+    //  await move(
+    //    join(baseGoModPath, 'go.sum'),
+    //    join(baseGoModPath, 'go.sum.bk'),
+    //    { overwrite: forceMove }
+    //  );
+    //}
   } else {
     // legacy mode
     // we need `main.go` in the same dir as the entrypoint,
@@ -449,26 +441,14 @@ Learn more: https://vercel.com/docs/runtimes#official-runtimes/go
     }
   }
 
+  /*
   const lambda = await createLambda({
     files: { ...(await glob('**', outDir)), ...includedFiles },
     handler: handlerFileName,
     runtime: 'go1.x',
     environment: {},
   });
-
-  const watch = parsedAnalyzed.watch;
-  let watchSub: string[] = [];
-  // if `entrypoint` located in subdirectory
-  // we will need to concat it with return watch array
-  if (entrypointArr.length > 1) {
-    entrypointArr.pop();
-    watchSub = parsedAnalyzed.watch.map(file => join(...entrypointArr, file));
-  }
-
-  return {
-    output: lambda,
-    watch: watch.concat(watchSub),
-  };
+  */
 }
 
 function isPortInfo(v: any): v is PortInfo {
