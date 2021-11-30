@@ -1,10 +1,11 @@
 import util from 'util';
-import { extname, join, basename } from 'path';
-import * as esbuild from 'esbuild';
+import { extname, join, basename, dirname } from 'path';
+import * as swc from '@swc/core';
 import { promises as fsp } from 'fs';
 import { IncomingMessage, ServerResponse } from 'http';
 import libGlob from 'glob';
 import Proxy from 'http-proxy';
+import mkdirp from 'mkdirp';
 
 import { run } from './websandbox';
 import type { FetchEventResult } from './websandbox/types';
@@ -16,6 +17,7 @@ import {
   UrlWithParsedQuery,
 } from 'url';
 import { toNodeHeaders } from './websandbox/utils';
+import { SpackConfig } from '@swc/core/spack';
 
 const glob = util.promisify(libGlob);
 const SUPPORTED_EXTENSIONS = ['.js', '.ts'];
@@ -61,14 +63,29 @@ export async function build({ workPath }: { workPath: string }) {
   // Create `_ENTRIES` wrapper
   await fsp.copyFile(join(__dirname, 'entries.js'), entriesPath);
 
+  const outputPath = join(workPath, '.output/server/pages');
+  mkdirp.sync(outputPath);
   // Build
   try {
-    await esbuild.build({
-      entryPoints: [entriesPath],
-      bundle: true,
-      absWorkingDir: workPath,
-      outfile: join(workPath, '.output/server/pages/_middleware.js'),
-    });
+    const output = await swc.bundle({
+      entry: [entriesPath],
+      module: {
+        type: 'commonjs',
+      },
+      isModule: false,
+      workingDir: workPath,
+      output: {
+        name: '_middleware.js',
+        path: outputPath,
+      },
+    } as SpackConfig);
+    //@ts-ignore
+    await fsp.writeFile(
+      join(outputPath, '_middleware.js'),
+      output['___vc_entries.js'].code
+    );
+  } catch (e) {
+    console.log('error compiltin', e);
   } finally {
     await fsp.unlink(entriesPath);
   }
@@ -92,6 +109,7 @@ export async function build({ workPath }: { workPath: string }) {
     workPath,
     '.output/server/middleware-manifest.json'
   );
+  mkdirp.sync(dirname(middlewareManifestPath));
   await fsp.writeFile(middlewareManifestPath, middlewareManifestData);
 }
 

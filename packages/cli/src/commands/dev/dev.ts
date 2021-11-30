@@ -70,6 +70,7 @@ export default async function dev(
           frameworkSlug = framework.slug;
         }
 
+        //@ts-ignore
         const defaults = framework.settings.devCommand.value;
         if (defaults) {
           devCommand = defaults;

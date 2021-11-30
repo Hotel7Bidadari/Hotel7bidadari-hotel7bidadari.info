@@ -14,7 +14,7 @@ import fetch, {
   RequestInfo,
 } from 'node-fetch';
 import { adapter } from '../adapter';
-import * as esbuild from 'esbuild';
+import * as swc from '@swc/core';
 import m from 'module';
 
 interface URLLike {
@@ -112,8 +112,11 @@ export async function run(params: {
   }
   try {
     const content = readFileSync(params.path, 'utf-8');
-    const esBuildResult = esbuild.transformSync(content, {
-      format: 'cjs',
+    const esBuildResult = await swc.transformSync(content, {
+      isModule: true,
+      module: {
+        type: 'commonjs',
+      },
     });
     const x = vm.runInNewContext(m.wrap(esBuildResult.code), cache.sandbox, {
       filename: params.path,
@@ -161,16 +164,17 @@ function sandboxRequire(referrer: string, specifier: string) {
 
   cache?.require.set(resolved, module);
 
-  const transformOptions: esbuild.TransformOptions = {
-    format: 'cjs',
-  };
+  let fileContent = readFileSync(resolved, 'utf-8');
   if (extname(resolved) === '.json') {
-    transformOptions.loader = 'json';
+    fileContent = `export default ${fileContent}`;
   }
-  const transformedContent = esbuild.transformSync(
-    readFileSync(resolved, 'utf-8'),
-    transformOptions
-  ).code;
+  const { code: transformedContent } = swc.transformSync(fileContent, {
+    isModule: true,
+    module: {
+      type: 'commonjs',
+    },
+  });
+
   const fn = vm.runInContext(
     `(function(module,exports,require,__dirname,__filename) {${transformedContent}\n})`,
     cache!.sandbox

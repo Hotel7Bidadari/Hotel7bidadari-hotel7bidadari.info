@@ -18,7 +18,7 @@
     "dist"
   ],
   "dependencies": {
-    "esbuild": "0.13.12"
+    "@swc/core": "1.2.113"
   },
   "devDependencies": {
     "@peculiar/webcrypto": "1.2.0",
@@ -26,6 +26,7 @@
     "@types/glob": "7.2.0",
     "@types/http-proxy": "1.17.7",
     "@types/jest": "27.0.2",
+    "@types/mkdirp": "1.0.2",
     "@types/node": "16.11.6",
     "@types/node-fetch": "^2",
     "@types/ua-parser-js": "0.7.36",
@@ -35,6 +36,7 @@
     "formdata-node": "4.3.1",
     "glob": "7.2.0",
     "http-proxy": "1.18.1",
+    "mkdirp": "1.0.4",
     "node-fetch": "^2",
     "ua-parser-js": "1.0.2",
     "url": "0.11.0",

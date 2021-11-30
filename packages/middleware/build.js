@@ -12,7 +12,14 @@ async function main() {
 
   await execa(
     'ncc',
-    ['build', join(srcDir, 'index.ts'), '-o', outDir, '--external', 'esbuild'],
+    [
+      'build',
+      join(srcDir, 'index.ts'),
+      '-o',
+      outDir,
+      '--external',
+      '@swc/core',
+    ],
     {
       stdio: 'inherit',
     }
