@@ -2558,7 +2558,9 @@ export const build: BuildV2 = async ({
 };
 
 export const prepareCache: PrepareCache = async opts => {
-  console.log(JSON.stringify(opts));
+  const { files, ...optsWithoutFiles } = opts;
+  console.log(JSON.stringify(Object.keys(files)));
+  console.log(JSON.stringify(optsWithoutFiles));
   const { workPath, repoRootPath, entrypoint, config = {} } = opts;
   debug('Preparing cache...');
   const entryDirectory = path.dirname(entrypoint);
@@ -2579,6 +2581,20 @@ export const prepareCache: PrepareCache = async opts => {
   const isMonorepo = repoRootPath && repoRootPath !== workPath;
   const cacheBasePath = repoRootPath || workPath;
   const cacheEntrypoint = path.relative(cacheBasePath, entryPath);
+  console.log({
+    workPath,
+    repoRootPath,
+    entrypoint,
+    config,
+    entryDirectory,
+    entryPath,
+    outputDirectory,
+    nextVersionRange,
+    isLegacy,
+    isMonorepo,
+    cacheBasePath,
+    cacheEntrypoint,
+  });
   const cache = {
     ...(await glob(
       isMonorepo
