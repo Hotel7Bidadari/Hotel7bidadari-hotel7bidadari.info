@@ -2601,7 +2601,7 @@ export const prepareCache: PrepareCache = async opts => {
       isMonorepo
         ? '**/node_modules/**'
         : path.join(cacheEntrypoint, 'node_modules/**'),
-      cacheBasePath
+      { cwd: cacheBasePath, ignore: ['.vercel/**'] }
     )),
     ...(await glob(
       path.join(cacheEntrypoint, outputDirectory, 'cache/**'),
