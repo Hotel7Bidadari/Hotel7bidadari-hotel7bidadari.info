@@ -2578,8 +2578,7 @@ export const prepareCache: PrepareCache = async opts => {
   debug('Producing cache file manifest...');
 
   // for monorepos we want to cache all node_modules
-  //const isMonorepo = repoRootPath && repoRootPath !== workPath;
-  const isMonorepo = false;
+  const isMonorepo = repoRootPath && repoRootPath !== workPath;
   const cacheBasePath = repoRootPath || workPath;
   const cacheEntrypoint = path.relative(cacheBasePath, entryPath);
   console.log({
