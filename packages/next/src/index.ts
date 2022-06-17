@@ -2557,12 +2557,9 @@ export const build: BuildV2 = async ({
   };
 };
 
-export const prepareCache: PrepareCache = async ({
-  workPath,
-  repoRootPath,
-  entrypoint,
-  config = {},
-}) => {
+export const prepareCache: PrepareCache = async opts => {
+  console.log(opts);
+  const { workPath, repoRootPath, entrypoint, config = {} } = opts;
   debug('Preparing cache...');
   const entryDirectory = path.dirname(entrypoint);
   const entryPath = path.join(workPath, entryDirectory);
