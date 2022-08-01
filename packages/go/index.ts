@@ -4,7 +4,7 @@ import { homedir, tmpdir } from 'os';
 import { spawn } from 'child_process';
 import { Readable } from 'stream';
 import once from '@tootallnate/once';
-import { join, dirname, basename, normalize, sep } from 'path';
+import { join, dirname, basename, normalize, sep, relative } from 'path';
 import {
   readFile,
   writeFile,
@@ -12,6 +12,7 @@ import {
   mkdirp,
   move,
   remove,
+  outputFile,
 } from 'fs-extra';
 import {
   BuildOptions,
@@ -144,7 +145,7 @@ Learn more: https://github.com/golang/go/wiki/Modules
     }
     analyzed = await getAnalyzedEntrypoint(
       workPath,
-      downloadedFiles[entrypoint].fsPath,
+      relative(workPath, downloadedFiles[entrypoint].fsPath),
       goModAbsPathDir
     );
   } catch (err) {
@@ -479,13 +480,20 @@ function isReadable(v: any): v is Readable {
   return v && v.readable === true;
 }
 
-async function copyEntrypoint(entrypoint: string, dest: string): Promise<void> {
-  const data = await readFile(entrypoint, 'utf8');
+async function copyEntrypoint(files: string[], dest: string): Promise<void> {
+  for (const file of files) {
+    try {
+      const data = await readFile(file, 'utf8');
 
-  // Modify package to `package main`
-  const patched = data.replace(/\bpackage\W+\S+\b/, 'package main');
+      // Modify package to `package main`
+      const patched = data.replace(/\bpackage\W+\S+\b/, 'package main');
 
-  await writeFile(join(dest, 'entrypoint.go'), patched);
+      await outputFile(join(dest, file), patched);
+    } catch (err) {
+      debug(`copy entrypoint ${file} error`, err);
+      throw err;
+    }
+  }
 }
 
 async function copyDevServer(
@@ -536,7 +544,7 @@ Learn more: https://vercel.com/docs/runtimes#official-runtimes/go`
   const analyzed: Analyzed = JSON.parse(analyzedRaw);
 
   await Promise.all([
-    copyEntrypoint(entrypointWithExt, tmpPackage),
+    copyEntrypoint(analyzed.watch, tmp),
     copyDevServer(analyzed.functionName, tmpPackage),
   ]);
 
