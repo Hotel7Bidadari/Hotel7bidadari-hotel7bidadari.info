@@ -85,8 +85,7 @@ import {
   HttpHeadersConfig,
   EnvConfigs,
 } from './types';
-import { ProjectEnvVariable, ProjectSettings } from '../../types';
-import exposeSystemEnvs from './expose-system-envs';
+import { ProjectSettings } from '../../types';
 import { treeKill } from '../tree-kill';
 import { nodeHeadersToFetchHeaders } from './headers';
 import { formatQueryString, parseQueryString } from './parse-query-string';
@@ -97,7 +96,7 @@ import {
   isSpawnError,
 } from '../is-error';
 import isURL from './is-url';
-import { pickOverrides } from '../projects/project-settings';
+import { pickOverrides } from '../pull/project-settings';
 import { replaceLocalhost } from './parse-listen';
 
 const frontendRuntimeSet = new Set(
@@ -168,15 +167,10 @@ export default class DevServer {
   private blockingBuildsPromise: Promise<void> | null;
   private startPromise: Promise<void> | null;
 
-  private systemEnvValues: string[];
-  private projectEnvs: ProjectEnvVariable[];
-
   constructor(cwd: string, options: DevServerOptions) {
     this.cwd = cwd;
     this.output = options.output;
     this.envConfigs = { buildEnv: {}, runEnv: {}, allEnv: {} };
-    this.systemEnvValues = options.systemEnvValues || [];
-    this.projectEnvs = options.projectEnvs || [];
     this.files = {};
     this.originalProjectSettings = options.projectSettings;
     this.projectSettings = options.projectSettings;
@@ -501,9 +495,7 @@ export default class DevServer {
       }
     }
     try {
-      return {
-        ...this.validateEnvConfig(fileName, base || {}, env),
-      };
+      return this.validateEnvConfig(fileName, base || {}, env);
     } catch (err) {
       if (err instanceof MissingDotenvVarsError) {
         this.output.error(err.message);
@@ -526,8 +518,7 @@ export default class DevServer {
     this.getVercelConfigPromise = this._getVercelConfig();
 
     // Clean up the promise once it has resolved
-    const clear = this.clearVercelConfigPromise;
-    this.getVercelConfigPromise.finally(clear);
+    this.getVercelConfigPromise.finally(this.clearVercelConfigPromise);
 
     return this.getVercelConfigPromise;
   }
@@ -675,26 +666,14 @@ export default class DevServer {
     this.apiExtensions = detectApiExtensions(vercelConfig.builds || []);
 
     // Update the env vars configuration
-    let [runEnv, buildEnv] = await Promise.all([
+    const [localDotEnv, localDotEnvBuild, pullEnv] = await Promise.all([
       this.getLocalEnv('.env', vercelConfig.env),
       this.getLocalEnv('.env.build', vercelConfig.build?.env),
+      this.getLocalEnv('.vercel/.env.development.local'),
     ]);
-
-    let allEnv = { ...buildEnv, ...runEnv };
-
-    // If no .env/.build.env is present, use cloud environment variables
-    if (Object.keys(allEnv).length === 0) {
-      const cloudEnv = exposeSystemEnvs(
-        this.projectEnvs || [],
-        this.systemEnvValues || [],
-        this.projectSettings?.autoExposeSystemEnvs,
-        this.address.host
-      );
-
-      allEnv = { ...cloudEnv };
-      runEnv = { ...cloudEnv };
-      buildEnv = { ...cloudEnv };
-    }
+    const runEnv: Env = { ...pullEnv, ...localDotEnv };
+    const buildEnv: Env = { ...pullEnv, ...localDotEnvBuild };
+    const allEnv: Env = { ...buildEnv, ...runEnv };
 
     // legacy NOW_REGION env variable
     runEnv['NOW_REGION'] = 'dev1';
@@ -779,7 +758,7 @@ export default class DevServer {
 
   validateEnvConfig(type: string, env: Env = {}, localEnv: Env = {}): Env {
     // Validate if there are any missing env vars defined in `vercel.json`,
-    // but not in the `.env` / `.build.env` file
+    // but not in the `.env` / `.env.build` file
     const missing: string[] = Object.entries(env)
       .filter(
         ([name, value]) =>
