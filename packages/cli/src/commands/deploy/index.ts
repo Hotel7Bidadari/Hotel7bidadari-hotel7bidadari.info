@@ -63,7 +63,7 @@ import validatePaths, {
 import { getCommandName } from '../../util/pkg-name';
 import { getPreferredPreviewURL } from '../../util/deploy/get-preferred-preview-url';
 import { Output } from '../../util/output';
-import { help } from './args';
+import { help } from '../help';
 import { getDeploymentChecks } from '../../util/deploy/get-deployment-checks';
 import parseTarget from '../../util/deploy/parse-target';
 import getPrebuiltJson from '../../util/deploy/get-prebuilt-json';
