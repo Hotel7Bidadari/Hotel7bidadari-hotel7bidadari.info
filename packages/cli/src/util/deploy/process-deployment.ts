@@ -6,6 +6,9 @@ import {
   DeploymentOptions,
   VercelClientOptions,
 } from '@vercel/client';
+import { Terminal } from 'xterm-headless';
+import { SerializeAddon } from 'xterm-addon-serialize';
+import { AbortController } from 'abort-controller';
 import { Output } from '../output';
 import { progress } from '../output/progress';
 import Now from '../../util';
@@ -13,6 +16,7 @@ import { Org } from '../../types';
 import ua from '../ua';
 import { linkFolderToProject } from '../projects/link';
 import { prependEmoji, emoji } from '../emoji';
+import { createLogsIterator } from '../logs/iterator';
 
 function printInspectUrl(
   output: Output,
@@ -100,6 +104,8 @@ export default async function processDeployment({
   // the deployment is done
   const indications = [];
 
+  const buildLogsAbortController = new AbortController();
+
   try {
     for await (const event of createDeployment(clientOptions, requestBody)) {
       if (['tip', 'notice', 'warning'].includes(event.type)) {
@@ -180,14 +186,49 @@ export default async function processDeployment({
           process.stdout.write(`https://${event.payload.url}`);
         }
 
-        output.spinner(
-          event.payload.readyState === 'QUEUED' ? 'Queued' : 'Building',
-          0
-        );
+        if (event.payload.readyState === 'QUEUED') {
+          output.spinner('Queued', 0);
+        }
       }
 
+      const term = new Terminal({
+        allowProposedApi: true,
+        cols: 120,
+        rows: 30,
+      });
+
+      const serializeAddon = new SerializeAddon();
+      term.loadAddon(serializeAddon);
+
       if (event.type === 'building') {
-        output.spinner('Building', 0);
+        // Pipe build logs until the deployment is ready or running checks
+        (async (abort: AbortController) => {
+          const it = createLogsIterator(now._client, event.payload.id, abort);
+          //let isFirst = true;
+          for await (const events of it) {
+            for (const event of events) {
+              if (event.type === 'stdout' || event.type === 'stderr') {
+                output.stopSpinner();
+                process.stderr.write(event.text);
+                //await new Promise<void>(r => term.write(event.text.replace(/\n/g, '\r\n'), () => {
+                //  const serialized = serializeAddon.serialize({ scrollback: 0 }).split('\n');
+                //  if (!isFirst) {
+                //    now._client.stderr.write(`\r\u001b[11A\u001b[J`);
+                //  }
+                //  isFirst = false;
+                //  for (let i = 0; i < 10; i++) {
+                //    const line = serialized[serialized.length - 10 + i] || '';
+                //    now._client.stderr.write(line);
+                //    if (i !== 9) {
+                //      now._client.stderr.write('\n');
+                //    }
+                //  }
+                //  r();
+                //}));
+              }
+            }
+          }
+        })(buildLogsAbortController);
       }
 
       if (event.type === 'canceled') {
@@ -203,10 +244,12 @@ export default async function processDeployment({
           ? event.payload.checksState === 'completed'
           : true)
       ) {
+        buildLogsAbortController.abort();
         output.spinner('Completing', 0);
       }
 
       if (event.type === 'checks-running') {
+        buildLogsAbortController.abort();
         output.spinner('Running Checks', 0);
       }
 
