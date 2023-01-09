@@ -10,7 +10,6 @@ import {
   getSpawnOptions,
   glob,
   NodejsLambda,
-  readConfigFile,
   runNpmInstall,
   runPackageJsonScript,
   scanParentDirs,
@@ -69,6 +68,8 @@ export const build: BuildV2 = async ({
     env: spawnOpts.env || {},
   });
 
+  let packageJson: PackageJson | undefined;
+
   // Ensure `@remix-run/vercel` is in the project's `package.json`
   const packageJsonPath = await walkParentDirs({
     base: repoRootPath,
@@ -76,9 +77,9 @@ export const build: BuildV2 = async ({
     filename: 'package.json',
   });
   if (packageJsonPath) {
-    const packageJson: PackageJson = JSON.parse(
-      await fs.readFile(packageJsonPath, 'utf8')
-    );
+    packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf8'));
+  }
+  if (packageJsonPath && packageJson) {
     const { dependencies = {}, devDependencies = {} } = packageJson;
 
     let modified = false;
@@ -139,17 +140,14 @@ export const build: BuildV2 = async ({
       cwd: entrypointFsDirname,
     });
   } else {
-    const pkg = await readConfigFile<PackageJson>(
-      join(entrypointFsDirname, 'package.json')
-    );
-    if (hasScript('vercel-build', pkg)) {
+    if (hasScript('vercel-build', packageJson)) {
       debug(`Executing "yarn vercel-build"`);
       await runPackageJsonScript(
         entrypointFsDirname,
         'vercel-build',
         spawnOpts
       );
-    } else if (hasScript('build', pkg)) {
+    } else if (hasScript('build', packageJson)) {
       debug(`Executing "yarn build"`);
       await runPackageJsonScript(entrypointFsDirname, 'build', spawnOpts);
     } else {
@@ -212,6 +210,13 @@ export const build: BuildV2 = async ({
     ),
   ]);
 
+  let framework: { version: string } | undefined;
+  if (packageJson?.version) {
+    framework = {
+      version: packageJson.version,
+    };
+  }
+
   return {
     routes: [
       {
@@ -231,10 +236,11 @@ export const build: BuildV2 = async ({
       render: renderFunction,
       ...staticFiles,
     },
+    framework,
   };
 };
 
-function hasScript(scriptName: string, pkg: PackageJson | null) {
+function hasScript(scriptName: string, pkg: PackageJson | undefined) {
   const scripts = (pkg && pkg.scripts) || {};
   return typeof scripts[scriptName] === 'string';
 }
