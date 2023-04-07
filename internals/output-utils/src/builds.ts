@@ -1,6 +1,5 @@
 import chalk from 'chalk';
 import bytes from 'bytes';
-import { isReady, isFailed } from '../build-state';
 import { Build, BuildOutput } from '@vercel-internals/types';
 
 export interface Times {
@@ -219,7 +218,7 @@ export default (builds: Build[], times: Times) => {
   const final = [];
   let finalBuildsLength = path.length;
   let lengthWithoutRootPaths = path.length;
-  let hiddenBuildGroup: Build[] = [];
+  const hiddenBuildGroup: Build[] = [];
 
   // Ungroup the root files
   path = (() => {
@@ -314,3 +313,9 @@ export default (builds: Build[], times: Times) => {
     toPrint: `${final.join('')}`,
   };
 };
+
+export const isReady = ({ readyState }: Pick<Build, 'readyState'>) =>
+  readyState === 'READY';
+
+export const isFailed = ({ readyState }: Pick<Build, 'readyState'>) =>
+  readyState.endsWith('_ERROR') || readyState === 'ERROR';

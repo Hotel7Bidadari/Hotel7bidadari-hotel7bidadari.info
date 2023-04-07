@@ -1,11 +1,10 @@
 import chalk from 'chalk';
 import * as ansiEscapes from 'ansi-escapes';
 import { supportsHyperlink as detectSupportsHyperlink } from 'supports-hyperlinks';
-import renderLink from './link';
-import wait, { StopSpinner } from './wait';
+import { link as renderLink, wait, StopSpinner } from '@vercel-internals/output-utils';
 import type { WritableTTY } from '@vercel-internals/types';
-import { errorToString } from '@vercel/error-utils';
-import { removeEmoji } from '../emoji';
+import { errorToString } from '@vercel-internals/errors';
+import { removeEmoji } from '@vercel-internals/emoji';
 
 const IS_TEST = process.env.NODE_ENV === 'test';
 
@@ -133,7 +132,7 @@ export class Output {
     }
   };
 
-  spinner = (message: string, delay: number = 300): void => {
+  spinner = (message: string, delay = 300): void => {
     if (this.debugEnabled) {
       this.debug(`Spinner invoked (${message}) with a ${delay}ms delay`);
       return;

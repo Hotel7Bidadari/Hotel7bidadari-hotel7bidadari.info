@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import { metrics, shouldCollectMetrics } from '../metrics';
-import { APIError } from '../errors-ts';
-import renderLink from './link';
+import { APIError } from './api-error';
+import { link as renderLink } from '@vercel-internals/output-utils';
 
 let metric: ReturnType<typeof metrics>;
 
