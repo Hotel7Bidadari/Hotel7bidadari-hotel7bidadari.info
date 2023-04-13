@@ -81,13 +81,23 @@ jobs:
         env:
           FORCE_COLOR: '1'
       - name: Test ${{matrix.packageName}}
-        run: node utils/gen.js && node_modules/.bin/turbo run test --cache-dir=".turbo" --scope=${{matrix.packageName}} --no-deps -- ${{ join(matrix.testPaths, ' ') }}
+        run: node utils/gen.js && node_modules/.bin/turbo run test --cache-dir=".turbo" --scope=${{matrix.packageName}} --no-deps -- --json -- --outputFile reports/jest-${{matrix.scriptName}}-${{matrix.packageName}}-${{matrix.chunkNumber}}-${{ matrix.runner }}.json -- ${{ join(matrix.testPaths, ' ') }}
         shell: bash
         env:
           VERCEL_CLI_VERSION: ${{ needs.setup.outputs.dplUrl }}/tarballs/vercel.tgz
           VERCEL_TEST_TOKEN: ${{ secrets.VERCEL_TEST_TOKEN }}
           VERCEL_TEST_REGISTRATION_URL: ${{ secrets.VERCEL_TEST_REGISTRATION_URL }}
           FORCE_COLOR: '1'
+
+      - run: find .
+
+      - name: Test Reporter
+        uses: dorny/test-reporter@v1.6.0
+        if: success() || failure()    # run this step even if previous step failed
+        with:
+          name: JEST Tests            # Name of the check run which will be created
+          path: "**jest-*.json"    # Path to test results
+          reporter: jest-junit        # Format of test results
 
   conclusion:
     needs:
