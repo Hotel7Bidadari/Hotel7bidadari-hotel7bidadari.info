@@ -9,8 +9,10 @@ import { pathToFileURL } from 'url';
 import type { ServerResponse, IncomingMessage } from 'http';
 import type { VercelProxyResponse } from '../types.js';
 import type { VercelRequest, VercelResponse } from './helpers.js';
+import { Agent } from 'undici';
+import type { Dispatcher } from 'undici';
 
-const { fetch, Headers } = EdgePrimitives
+const { fetch, Headers } = EdgePrimitives;
 
 type ServerlessServerOptions = {
   shouldAddHelpers: boolean;
@@ -73,6 +75,43 @@ async function compileUserCode(
   };
 }
 
+const kEncoding = Symbol('encoding');
+class CompressionAgent extends Agent {
+  [kEncoding]: string | undefined = undefined;
+
+  dispatch(opts: Agent.DispatchOptions, handlers: Dispatcher.DispatchHandlers) {
+    const { onHeaders } = handlers;
+
+    const agent = this;
+    if (onHeaders) {
+      handlers = {
+        ...handlers,
+        onHeaders(statusCode, headers, ...rest) {
+          let outHeaders = headers;
+
+          if (statusCode >= 200 && headers) {
+            outHeaders = [];
+            for (let n = 0; n < headers.length; n += 2) {
+              const key = headers[n + 0].toString('latin1');
+
+              if (key.toLowerCase() === 'content-encoding') {
+                agent[kEncoding] = headers[n + 1].toString('latin1');
+              } else {
+                outHeaders.push(headers[n + 0] as any);
+                outHeaders.push(headers[n + 1] as any);
+              }
+            }
+          }
+
+          // `this` is not our `Agent`, it's the `DispatchHandlers`!
+          return onHeaders.call(this, statusCode, outHeaders, ...rest);
+        },
+      };
+    }
+    return super.dispatch(opts, handlers);
+  }
+}
+
 export async function createServerlessEventHandler(
   entrypointPath: string,
   options: ServerlessServerOptions
@@ -86,25 +125,31 @@ export async function createServerlessEventHandler(
     const headers = {
       ...request.headers,
       host: request.headers['x-forwarded-host'],
-    } as any
+    } as any;
 
+    const dispatcher = new CompressionAgent();
     const webResponse = await fetch(url, {
       body: await serializeBody(request),
       headers,
       method: request.method,
       redirect: 'manual',
+      // @ts-expect-error dispatcher is part of undici, not the fetch spec.
+      dispatcher,
     });
 
-    const resHeaders = new Headers(webResponse.headers)
+    const resHeaders = new Headers(webResponse.headers);
+    if (dispatcher[kEncoding] !== undefined) {
+      resHeaders.append('content-encoding', dispatcher[kEncoding]);
+    }
 
     let body;
     if (options.mode === 'streaming') {
-      body = webResponse.body;
+      body = webResponse.body as any;
     } else {
       // FIXME: at this point body is decompressed
       // but we are returning `content-encoding`, causing a mismatching
       // we should to compress it again. Better solution is to pass a custom undici agent.
-      body = Buffer.from(await webResponse.arrayBuffer())
+      body = Buffer.from(await webResponse.arrayBuffer());
 
       /**
        * `transfer-encoding` is related to streaming chunks.
@@ -127,5 +172,5 @@ export async function createServerlessEventHandler(
       body,
       encoding: 'utf8',
     };
-  }
+  };
 }
