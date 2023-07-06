@@ -1,15 +1,16 @@
 import { addHelpers } from './helpers.js';
 import { createServer } from 'http';
 import { serializeBody } from '../utils.js';
-import { streamToBuffer } from '@vercel/build-utils';
+import EdgePrimitives from '@edge-runtime/primitives';
 import exitHook from 'exit-hook';
-import fetch from 'node-fetch';
 import { listen } from 'async-listen';
 import { isAbsolute } from 'path';
 import { pathToFileURL } from 'url';
 import type { ServerResponse, IncomingMessage } from 'http';
 import type { VercelProxyResponse } from '../types.js';
 import type { VercelRequest, VercelResponse } from './helpers.js';
+
+const { fetch, Headers } = EdgePrimitives
 
 type ServerlessServerOptions = {
   shouldAddHelpers: boolean;
@@ -81,31 +82,50 @@ export async function createServerlessEventHandler(
 
   return async function (request: IncomingMessage) {
     const url = new URL(request.url ?? '/', server.url);
-    // @ts-expect-error
-    const response = await fetch(url, {
+
+    const headers = {
+      ...request.headers,
+      host: request.headers['x-forwarded-host'],
+    } as any
+
+    const webResponse = await fetch(url, {
       body: await serializeBody(request),
-      headers: {
-        ...request.headers,
-        host: request.headers['x-forwarded-host'],
-      },
+      headers,
       method: request.method,
       redirect: 'manual',
     });
 
+    const resHeaders = new Headers(webResponse.headers)
+
     let body;
     if (options.mode === 'streaming') {
-      body = response.body;
+      body = webResponse.body;
     } else {
-      body = await streamToBuffer(response.body);
-      response.headers.delete('transfer-encoding');
-      response.headers.set('content-length', body.length);
+      // FIXME: at this point body is decompressed
+      // but we are returning `content-encoding`, causing a mismatching
+      // we should to compress it again. Better solution is to pass a custom undici agent.
+      body = Buffer.from(await webResponse.arrayBuffer())
+
+      /**
+       * `transfer-encoding` is related to streaming chunks.
+       * Since we are buffering the response.body, it should be stripped.
+       */
+      resHeaders.delete('transfer-encoding');
+
+      /**
+       * Since the entity-length and the transfer-length is different,
+       * the content-length should be stripped.
+       */
+      if (resHeaders.has('content-encoding')) {
+        resHeaders.delete('content-length');
+      }
     }
 
     return {
-      status: response.status,
-      headers: response.headers,
+      status: webResponse.status,
+      headers: resHeaders,
       body,
       encoding: 'utf8',
     };
-  };
+  }
 }

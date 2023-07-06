@@ -6,6 +6,7 @@ if (!entrypoint) {
 }
 
 import { join } from 'path';
+// FIXME: use import type { Headers } from '@edge-runtime/primitives';
 import type { Headers } from 'node-fetch';
 import type { VercelProxyResponse } from './types.js';
 import { Config } from '@vercel/build-utils';
