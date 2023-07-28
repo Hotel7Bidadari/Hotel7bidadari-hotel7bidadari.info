@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import stripAnsi from 'strip-ansi';
 import { LOGO, NAME } from '@vercel-internals/constants';
+import { getPkgName } from '../util/pkg-name';
 
 const INDENT = ' '.repeat(2);
 const NEWLINE = '\n';
@@ -24,6 +25,7 @@ export interface CommandExample {
 }
 export interface Command {
   name: string;
+  alias?: string;
   description: string;
   arguments: CommandArgument[];
   options: CommandOption[];
@@ -262,7 +264,11 @@ export function buildCommandExampleLines(command: Command) {
     outputArray.push(lineToString(nameLine));
     outputArray.push('');
     const buildValueLine = (value: string) => {
-      return lineToString([INDENT, INDENT, chalk.cyan(`$ ${value}`)]);
+      return lineToString([
+        INDENT,
+        INDENT,
+        chalk.cyan(`$ ${getPkgName()} ${value}`),
+      ]);
     };
     if (Array.isArray(example.value)) {
       for (const line of example.value) {

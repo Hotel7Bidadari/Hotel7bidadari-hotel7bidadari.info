@@ -159,23 +159,23 @@ export const deployCommand: Command = {
   examples: [
     {
       name: 'Deploy the current directory',
-      value: 'vercel',
+      value: '',
     },
     {
       name: 'Deploy a custom path',
-      value: 'vercel /usr/src/project',
+      value: '/usr/src/project',
     },
     {
       name: 'Deploy with run-time Environment Variables',
-      value: 'vercel -e NODE_ENV=production',
+      value: '-e NODE_ENV=production',
     },
     {
       name: 'Deploy with prebuilt outputs',
-      value: ['vercel build', 'vercel deploy --prebuilt'],
+      value: ['build', 'deploy --prebuilt'],
     },
     {
       name: 'Write Deployment URL to a file',
-      value: 'vercel > deployment-url.txt',
+      value: '> deployment-url.txt',
     },
   ],
 };
