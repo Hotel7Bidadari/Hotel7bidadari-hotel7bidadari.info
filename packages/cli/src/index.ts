@@ -88,7 +88,6 @@ const main = async () => {
   }
 
   let argv;
-
   try {
     argv = getArgs(
       process.argv,
