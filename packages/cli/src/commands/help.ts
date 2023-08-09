@@ -3,7 +3,6 @@ import stripAnsi from 'strip-ansi';
 import wrap from 'word-wrap';
 import Table from 'cli-table3';
 import { LOGO, NAME } from '@vercel-internals/constants';
-import { open } from 'fs';
 
 const INDENT = ' '.repeat(2);
 const NEWLINE = '\n';
@@ -32,6 +31,12 @@ export interface Command {
   arguments: CommandArgument[];
   options: CommandOption[];
   examples: CommandExample[];
+}
+
+interface TableCell {
+  content: string | undefined;
+  wrapOnWordBoundary?: boolean;
+  wordWrap?: boolean;
 }
 
 const globalCommandOptions: CommandOption[] = [
@@ -114,6 +119,24 @@ const globalCommandOptions: CommandOption[] = [
   },
 ];
 
+const blankTableOptions = {
+  top: '',
+  'top-mid': '',
+  'top-left': '',
+  'top-right': '',
+  bottom: '',
+  'bottom-mid': '',
+  'bottom-left': '',
+  'bottom-right': '',
+  left: '',
+  'left-mid': '',
+  mid: '',
+  'mid-mid': '',
+  right: '',
+  'right-mid': '',
+  middle: ' ',
+};
+
 export function calcLineLength(line: string[]) {
   return stripAnsi(lineToString(line)).length;
 }
@@ -184,7 +207,8 @@ export function buildCommandOptionLines(
     a.name < b.name ? -1 : a.name > b.name ? 1 : 0
   );
 
-  const rows: (string | undefined)[][] = [];
+  const columnWidths = [0, 0, 0];
+  const rows: (string | undefined | TableCell)[][] = [];
   commandOptions.forEach((option: CommandOption) => {
     const shorthandCell = option.shorthand ? `-${option.shorthand},` : '';
     let longhandCell = `--${option.name}`;
@@ -193,28 +217,31 @@ export function buildCommandOptionLines(
       longhandCell += ` <${option.argument}>`;
     }
 
-    rows.push([shorthandCell, longhandCell, option.description]);
+    columnWidths[0] = Math.max(
+      columnWidths[0],
+      shorthandCell.length + INDENT.repeat(1).length
+    );
+    columnWidths[1] = Math.max(
+      columnWidths[1],
+      longhandCell.length + INDENT.repeat(1).length
+    );
+    rows.push([
+      shorthandCell,
+      longhandCell,
+      { content: option.description, wordWrap: true },
+    ]);
   });
 
+  columnWidths[2] =
+    options.columns -
+    columnWidths[2] -
+    columnWidths[1] -
+    INDENT.repeat(5).length;
+
+  console.log(columnWidths);
   const table = new Table({
-    chars: {
-      top: '',
-      'top-mid': '',
-      'top-left': '',
-      'top-right': '',
-      bottom: '',
-      'bottom-mid': '',
-      'bottom-left': '',
-      'bottom-right': '',
-      left: '',
-      'left-mid': '',
-      mid: '',
-      'mid-mid': '',
-      right: '',
-      'right-mid': '',
-      middle: ' ',
-    },
-    wordWrap: true,
+    // chars: blankTableOptions,
+    colWidths: columnWidths,
     style: {
       'padding-left': INDENT.length,
     },
@@ -262,7 +289,7 @@ function buildDescriptionLine(
   const line: string[] = [
     // when width is === terminal width, overflow will occur.
     // subtacting 2 columns seems to resolve the problem.
-    wrap(command.description, { indent: INDENT, width: options.columns - 2 }),
+    wrap(command.description, { indent: INDENT, width: options.columns - 4 }),
     SECTION_BREAK,
   ];
   return lineToString(line);
