@@ -42,6 +42,7 @@
     "@vercel/ruby": "1.3.76",
     "@vercel/static-build": "1.3.43",
     "cli-table3": "0.6.3",
+    "table": "6.8.1",
     "word-wrap": "1.2.5"
   },
   "devDependencies": {
