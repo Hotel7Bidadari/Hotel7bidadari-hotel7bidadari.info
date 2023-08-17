@@ -23,14 +23,12 @@ const codeStyles = {
   borderRadius: 4,
 };
 
-const NotFoundPage = () => {
+const Error500Page = () => {
   return (
     <main style={pageStyles}>
-      <h1 style={headingStyles}>Page not found</h1>
+      <h1 style={headingStyles}>Broke!</h1>
       <p style={paragraphStyles}>
-        Sorry 😔, we couldn’t find what you were looking for.
-        <br />
-        This is a custom 404 page.
+        This is a custom 500 page.
         <br />
         <Link to="/">Go home</Link>.
       </p>
@@ -38,6 +36,6 @@ const NotFoundPage = () => {
   );
 };
 
-export default NotFoundPage;
+export default Error500Page;
 
-export const Head = () => <title>Not found</title>;
+export const Head = () => <title>Error!</title>;
