@@ -65,6 +65,7 @@ export const writeVCConfig = async ({
 export const writePrerenderConfig = (outputPath: string, group: number) => {
   const config: PrerenderFunctionConfig = {
     group,
+    bypassToken: '87734ad8259d67c3c11747d3e4e112d0',
     expiration: 600, // 10 minutes TODO: make this configurable?
   };
   ensureFileSync(outputPath);
