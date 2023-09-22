@@ -40,10 +40,7 @@ export async function duplicateWithConfig(params: {
   return projectPath;
 }
 
-export const composeRoute = (
-  route: string,
-  { host = 'example.vercel.sh' } = {}
-) =>
+export const composeRoute = (route, { host = 'example.vercel.sh' } = {}) =>
   `http://localhost:1337/workerId/GET/https/${host}/${route.replace('/', '')}`;
 
 export const createLoggerServer = async (): Promise<LoggerServer> => {
@@ -52,7 +49,7 @@ export const createLoggerServer = async (): Promise<LoggerServer> => {
   const server = http.createServer((req, res) => {
     req
       .pipe(ndjson.parse())
-      .on('data', (json: Dictionary) => content.push(json))
+      .on('data', json => content.push(json))
       .on('end', () => res.end());
   });
 
@@ -74,7 +71,7 @@ export const createLoggerServer = async (): Promise<LoggerServer> => {
 
 process.env.NEXT_TELEMETRY_DISABLED = '1';
 
-export async function deployAndTest(fixtureDir: string, opts) {
+export async function deployAndTest(fixtureDir, opts) {
   const { deploymentId, deploymentUrl } = await testDeployment(
     fixtureDir,
     opts
@@ -86,7 +83,7 @@ export async function deployAndTest(fixtureDir: string, opts) {
   };
 }
 
-export async function waitFor(milliseconds: number) {
+export async function waitFor(milliseconds) {
   return new Promise(resolve => {
     setTimeout(resolve, milliseconds);
   });

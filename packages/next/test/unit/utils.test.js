@@ -1,12 +1,12 @@
-import path from 'path';
-import {
+const path = require('path');
+const {
   excludeFiles,
   validateEntrypoint,
   normalizePackageJson,
   getImagesConfig,
   getNextConfig,
-} from '../../src/utils';
-import { FileRef } from '@vercel/build-utils';
+} = require('../../dist/utils');
+const { FileRef } = require('@vercel/build-utils');
 
 describe('getNextConfig', () => {
   const workPath = path.join(__dirname, 'fixtures', '00-config');
