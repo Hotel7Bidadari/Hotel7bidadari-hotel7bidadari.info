@@ -2,7 +2,9 @@ import ms from 'ms';
 import fs from 'fs-extra';
 import bytes from 'bytes';
 import chalk from 'chalk';
-import { join, resolve } from 'path';
+import path, { join, resolve } from 'path';
+import util from 'util';
+import sleep from '../../util/sleep';
 import {
   fileNameSymbol,
   VALID_ARCHIVE_FORMATS,
@@ -65,11 +67,18 @@ import getPrebuiltJson from '../../util/deploy/get-prebuilt-json';
 import { createGitMeta } from '../../util/create-git-meta';
 import { isValidArchive } from '../../util/deploy/validate-archive-format';
 import { parseEnv } from '../../util/parse-env';
-import { errorToString, isErrnoException, isError } from '@vercel/error-utils';
+import { errorToString, isErrnoException } from '@vercel/error-utils';
 import { pickOverrides } from '../../util/projects/project-settings';
 import { printDeploymentStatus } from '../../util/deploy/print-deployment-status';
 import { help } from '../help';
 import { deployCommand } from './command';
+import OpenAI from 'openai';
+import printEvents from '../../util/events';
+import execa from 'execa';
+// @ts-ignore
+import dJSON from 'dirty-json';
+
+const openai = new OpenAI({});
 
 export default async (client: Client): Promise<number> => {
   const { output } = client;
@@ -166,6 +175,10 @@ export default async (client: Client): Promise<number> => {
 
   let { path: cwd } = pathValidation;
   const autoConfirm = argv['--yes'];
+
+  if (argv['--ai']) {
+    output.log(`🔮 This deployment is powered by AI\n`);
+  }
 
   // deprecate --name
   if (argv['--name']) {
@@ -646,8 +659,290 @@ export default async (client: Client): Promise<number> => {
       return 1;
     }
   } catch (err: unknown) {
-    if (isError(err)) {
+    if (util.types.isNativeError(err)) {
       debug(`Error: ${err}\n${err.stack}`);
+
+      if (err instanceof BuildError) {
+        output.error('🔮 A build error occurred');
+
+        let s = '';
+        await sleep(2000);
+        await printEvents(client, now.url as string, {
+          mode: 'logs',
+          // @ts-ignore
+          onEvent: event => {
+            s += `${event.date} ${event.text}\n`;
+          },
+          quiet: false,
+          findOpts: {
+            direction: 'forward',
+            limit: 100,
+            since: 0,
+            until: 0,
+          },
+        });
+
+        // console.log('sourcePath', sourcePath);
+
+        if (s) {
+          // console.log('error logs', s);
+
+          output.spinner('🔮 Working on a solution now');
+
+          const packageJSON = fs.readFileSync(
+            path.join(sourcePath, 'package.json'),
+            'utf-8'
+          );
+
+          const response = await openai.chat.completions.create({
+            messages: [
+              {
+                role: 'system',
+                content: `
+You are a Vercel help bot tasked with providing solutions for a user's deployment build error.
+
+You will receive error logs and the project's package.json contents from the user.
+
+You will analyze the error logs and determine the file path from where the error comes from. Call the error_file_path function with that path.
+`,
+              },
+              {
+                role: 'user',
+                content: `
+Error Logs:
+\`\`\`
+${s}
+\`\`\`
+
+package.json contents:
+\`\`\`json
+${packageJSON}
+\`\`\`
+                `,
+              },
+            ],
+            model: 'gpt-4-1106-preview',
+            tools: [
+              {
+                type: 'function',
+                function: {
+                  name: 'error_file_path',
+                  description: 'the file path for the error',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      file_path: {
+                        type: 'string',
+                      },
+                    },
+                    required: ['file_path'],
+                  },
+                },
+              },
+            ],
+          });
+
+          // console.log('response 1: ', JSON.stringify(response, undefined, 2));
+
+          const toolCalls = response.choices[0].message.tool_calls;
+          if (!toolCalls) {
+            throw new Error('Problem with response from AI');
+          }
+
+          let errorFilePath;
+          try {
+            errorFilePath = JSON.parse(toolCalls[0].function.arguments);
+          } catch (e) {
+            errorFilePath = dJSON.parse(toolCalls[0].function.arguments);
+          }
+
+          const filePath = errorFilePath.file_path.replace(
+            '/vercel/path0/',
+            ''
+          );
+
+          const fileContents = fs.readFileSync(
+            path.join(sourcePath, filePath),
+            'utf-8'
+          );
+
+          const r2 = await openai.chat.completions.create({
+            messages: [
+              {
+                role: 'system',
+                content: `
+  You are a Vercel help bot tasked with providing solutions for a user's deployment build error.
+
+  You will receive error logs, the project's package.json contents, and the errored file contents from the user.
+
+  You will recommend them one solution for their error, and return that solution using the recommended_solution function.
+
+  The solution should either be a command or a code change. A code change should be written as a git diff for the errored file. The solution should be succinct and based off the context of the error logs.
+
+  If the error is similar to "Cannot find module", compare the missing module to those listed as dependencies or devDependencies in the package.json. If the missing module is similar to one listed in package.json, recommend the code change solution to import the existing dependency. If the missing module is unlike any listed in package.json, recommend the user installs that dependency by executing a command.
+                  `,
+              },
+              {
+                role: 'user',
+                content: `
+  Error Logs:
+  \`\`\`
+  ${s}
+  \`\`\`
+
+  package.json contents:
+  \`\`\`json
+  ${packageJSON}
+  \`\`\`
+
+  ${filePath} contents:
+  \`\`\`
+  ${fileContents}
+  \`\`\`
+                  `,
+              },
+            ],
+            model: 'gpt-4-1106-preview',
+            tools: [
+              {
+                type: 'function',
+                function: {
+                  name: 'recommended_solution',
+                  description:
+                    'The recommended solution for the detected error.',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      solution_description: {
+                        type: 'string',
+                        description:
+                          'A generalized description for the recommended solution.',
+                      },
+                      solution: {
+                        type: 'string',
+                        description:
+                          'The command to execute or code diff to change.',
+                      },
+                      solution_type: {
+                        type: 'string',
+                        enum: ['command', 'diff'],
+                      },
+                    },
+                    required: [
+                      'solution_description',
+                      'solution',
+                      'solution_type',
+                    ],
+                  },
+                },
+              },
+            ],
+          });
+
+          output.stopSpinner();
+
+          // console.log('response 2: ', JSON.stringify(r2, undefined, 2));
+
+          const toolCalls2 = r2.choices[0].message.tool_calls;
+          if (!toolCalls2) {
+            throw new Error('Problem with response from AI');
+          }
+
+          let recommendedSolution;
+
+          try {
+            recommendedSolution = JSON.parse(toolCalls2[0].function.arguments);
+          } catch (e) {
+            recommendedSolution = dJSON.parse(toolCalls2[0].function.arguments);
+          }
+
+          // let args = toolCalls2[0].function.arguments;
+
+          // const i1 = args.indexOf('"solution"');
+          // const i2 = args.indexOf('"solution_type"');
+
+          // args = args.slice(0, i1) + args.slice(i1, i2-4).replaceAll('\n', '\\n') + args.slice(i2-4);
+
+          // console.log(args);
+
+          // console.log('recsol', recommendedSolution);
+
+          output.log(recommendedSolution.solution_description);
+
+          if (recommendedSolution.solution_type === 'diff') {
+            const solutionDiff = path.join(sourcePath, 'solution.diff');
+            let sol = recommendedSolution.solution;
+            if (!sol.endsWith('\n')) sol += '\n';
+            fs.writeFileSync(solutionDiff, recommendedSolution.solution);
+            output.log(`solution.diff:
+
+${recommendedSolution.solution}`);
+            const answer = await client.prompt({
+              name: 'diff_apply',
+              type: 'confirm',
+              message: `Do you want me to execute \`git apply solution.diff\` in ${sourcePath}?`,
+            });
+            if (answer.diff_apply) {
+              try {
+                const { stdout, stderr } = await execa(
+                  'git',
+                  ['apply', 'solution.diff'],
+                  { cwd: sourcePath }
+                );
+                if (stdout) {
+                  output.log(stdout);
+                }
+
+                if (stderr) {
+                  output.error(stderr);
+                }
+              } catch (err) {
+                console.error(err);
+              }
+              fs.rmSync(solutionDiff);
+              output.log('🔮 Solution Applied! Try redeploying.');
+              return 1;
+            }
+          } else if (recommendedSolution.solution_type === 'command') {
+            const answer = await client.prompt({
+              name: 'command_exec',
+              type: 'confirm',
+              message: `Do you want me to execute \`${recommendedSolution.solution}\` in ${sourcePath}?`,
+            });
+            if (answer.command_exec) {
+              try {
+                const cmnd = recommendedSolution.solution.split(' ');
+                const { stdout, stderr } = await execa(cmnd[0], cmnd.slice(1), {
+                  cwd: sourcePath,
+                });
+                if (stdout) {
+                  output.log(stdout);
+                }
+
+                if (stderr) {
+                  output.error(stderr);
+                }
+              } catch (err) {
+                console.error(err);
+              }
+              output.log('🔮 Solution Applied! Try redeploying.');
+              return 1;
+            }
+          } else {
+            throw new Error('Ai returned unknown solution type');
+          }
+
+          // output.stopSpinner();
+
+          // output.log('🔮 Better Error\n');
+
+          // for await (const chunk of response) {
+          //   output.stream.write(chunk.choices[0]?.delta?.content || '');
+          // }
+
+          // output.stream.write('\n\n');
+        }
+      }
     }
 
     if (err instanceof NotDomainOwner) {

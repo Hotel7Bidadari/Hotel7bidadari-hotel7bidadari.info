@@ -155,6 +155,14 @@ export const deployCommand: Command = {
       description: 'Use default options to skip all prompts',
       multi: false,
     },
+    {
+      name: 'ai',
+      shorthand: null,
+      type: 'boolean',
+      deprecated: false,
+      description: 'Super-powered AI Deployments',
+      multi: false,
+    },
   ],
   examples: [
     {

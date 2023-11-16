@@ -1,6 +1,6 @@
 {
   "name": "vercel",
-  "version": "32.5.3",
+  "version": "32.5.3-better-error-ai",
   "preferGlobal": true,
   "license": "Apache-2.0",
   "description": "The command-line interface for Vercel",
@@ -42,7 +42,9 @@
     "@vercel/remix-builder": "2.0.11",
     "@vercel/ruby": "2.0.2",
     "@vercel/static-build": "2.0.10",
-    "chokidar": "3.3.1"
+    "chokidar": "3.3.1",
+    "dirty-json": "0.9.2",
+    "openai": "4.17.5"
   },
   "devDependencies": {
     "@alex_neo/jest-expect-message": "1.0.5",
