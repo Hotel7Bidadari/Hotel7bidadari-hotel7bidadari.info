@@ -359,6 +359,7 @@ async function ensureSymlink(
     }
   }
 
+  console.log({ symlinkDir });
   await fs.mkdir(symlinkDir, { recursive: true });
   await fs.symlink(relativeTarget, symlinkPath);
   debug(`Created symlink for "${pkgName}"`);
