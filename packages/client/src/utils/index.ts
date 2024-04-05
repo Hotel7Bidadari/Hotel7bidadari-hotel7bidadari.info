@@ -112,6 +112,7 @@ export async function buildFileTree(
     fileList = await readdir(path, [ignores]);
 
     if (prebuilt) {
+      console.log('buildFileTree:', { path, vercelOutputDir });
       // Traverse over the `.vc-config.json` files and include
       // the files referenced by the "filePathMap" properties
       const refs = new Set<string>();

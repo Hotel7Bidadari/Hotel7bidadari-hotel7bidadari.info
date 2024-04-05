@@ -121,9 +121,8 @@ export default function buildCreateDeployment() {
         err.code === 'ENOENT' &&
         err.path
       ) {
-        const errPath = relative(workPath, err.path);
-        err.message = `File does not exist: "${relative(workPath, errPath)}"`;
-        if (errPath.split(sep).includes('node_modules')) {
+        err.message = `File does not exist: "${err.path}"`;
+        if (err.path.split(sep).includes('node_modules')) {
           err.message = `Please ensure project dependencies have been installed:\n${err.message}`;
         }
       }
