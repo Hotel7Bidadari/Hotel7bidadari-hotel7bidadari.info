@@ -169,6 +169,7 @@ export default async (client: Client): Promise<number> => {
   const quiet = !client.stdout.isTTY;
 
   let { path: cwd } = pathValidation;
+  console.log('deploy', { cwd });
   const autoConfirm = argv['--yes'];
 
   // deprecate --name
@@ -208,6 +209,7 @@ export default async (client: Client): Promise<number> => {
 
   // retrieve `project` and `org` from .vercel
   const link = await getLinkedProject(client, cwd);
+  console.log(link);
 
   if (link.status === 'error') {
     return link.exitCode;
