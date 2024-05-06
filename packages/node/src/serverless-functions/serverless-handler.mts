@@ -54,11 +54,11 @@ async function createServerlessServer(
   userCode: ServerlessFunctionSignature,
   awaiter: Awaiter
 ): Promise<{ url: URL; onExit: () => Promise<void> }> {
-  const server = createServer(async (req, res) => {
-    return Context.run({ waitUntil: awaiter.waitUntil.bind(awaiter) }, () =>
+  const server = createServer((req, res) =>
+    Context.run({ waitUntil: awaiter.waitUntil.bind(awaiter) }, () =>
       userCode(req, res)
-    );
-  });
+    )
+  );
 
   return {
     url: await listen(server, { host: '127.0.0.1', port: 0 }),

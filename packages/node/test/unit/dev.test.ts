@@ -233,6 +233,41 @@ async function withDevServer(
   });
 
   describe('for edge runtime', () => {
+    test('with `waitUntil` from import', () =>
+      withDevServer(
+        './wait-until-edge.js',
+        async (url: string) => {
+          let isWaitUntilCalled = false;
+          const serverUrl = await withHttpServer((_, res) => {
+            isWaitUntilCalled = true;
+            res.end();
+          });
+          await fetch(`${url}/api/wait-until-edge?url=${serverUrl}`);
+          await setTimeout(50); // wait a bit for waitUntil resolution
+          expect(isWaitUntilCalled).toBe(true);
+        },
+        { runningTimeout: 300 }
+      ));
+
+    test('with `waitUntil` from context', () =>
+      withDevServer(
+        './wait-until-ctx-edge.js',
+        async (url: string) => {
+          let isWaitUntilCalled = false;
+          const serverUrl = await withHttpServer((_, res) => {
+            isWaitUntilCalled = true;
+            res.end();
+          });
+          const response = await fetch(
+            `${url}/api/wait-until-ctx-edge?url=${serverUrl}`
+          );
+          expect(await response.json()).toEqual({ keys: ['waitUntil'] });
+          await setTimeout(50); // wait a bit for waitUntil resolution
+          expect(isWaitUntilCalled).toBe(true);
+        },
+        { runningTimeout: 300 }
+      ));
+
     test("user code doesn't interfere with runtime", () =>
       withDevServer('./edge-self.js', async (url: string) => {
         const response = await fetch(`${url}/api/edge-self`);

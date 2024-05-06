@@ -20,6 +20,14 @@ import type { VercelProxyResponse } from '../types.js';
 import type { IncomingMessage } from 'http';
 import { fileURLToPath } from 'url';
 import { EdgeRuntimeServer } from 'edge-runtime/dist/server/run-server.js';
+import { Awaiter, reader, symbol } from '../request-context.js';
+
+// eslint-disable-next-line
+Object.defineProperty(globalThis, symbol, {
+  enumerable: false,
+  configurable: true,
+  value: reader,
+});
 
 const NODE_VERSION_MAJOR = process.version.match(/^v(\d+)\.\d+/)?.[1];
 const NODE_VERSION_IDENTIFIER = `node${NODE_VERSION_MAJOR}`;
@@ -48,6 +56,7 @@ async function compileUserCode(
       wasmAssets: WasmAssets;
       nodeCompatBindings: NodeCompatBindings;
       entrypointPath: string;
+      awaiter: Awaiter;
     }
 > {
   const { wasmAssets, plugin: edgeWasmPlugin } = createEdgeWasmPlugin();
@@ -121,6 +130,7 @@ async function compileUserCode(
       userCode,
       wasmAssets,
       nodeCompatBindings: nodeCompatPlugin.bindings,
+      awaiter: new Awaiter()
     };
   } catch (error: unknown) {
     // We can't easily show a meaningful stack trace from esbuild -> edge-runtime.
@@ -136,6 +146,7 @@ async function createEdgeRuntimeServer(params?: {
   wasmAssets: WasmAssets;
   nodeCompatBindings: NodeCompatBindings;
   entrypointPath: string;
+  awaiter: Awaiter;
 }): Promise<
   { server: EdgeRuntimeServer; onExit: () => Promise<void> } | undefined
 > {
@@ -166,6 +177,12 @@ async function createEdgeRuntimeServer(params?: {
 
           // These are the global bindings for WebAssembly module
           ...wasmBindings,
+
+          FetchEvent: class extends context.FetchEvent {
+            waitUntil = (promise: any) => {
+              params!.awaiter.waitUntil(promise);
+            }
+          }
         });
 
         return context;
@@ -174,6 +191,13 @@ async function createEdgeRuntimeServer(params?: {
 
     const server = await runServer({ runtime });
 
+    // @ts-expect-error
+    runtime.context.globalThis[Symbol.for('@vercel/request-context')] = {
+      get: () => ({
+        waitUntil: params.awaiter.waitUntil.bind(params.awaiter)
+      })
+    }
+
     const onExit = async () =>
       new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
@@ -181,8 +205,7 @@ async function createEdgeRuntimeServer(params?: {
           resolve();
         }, WAIT_UNTIL_TIMEOUT_MS);
 
-        server
-          .close()
+        Promise.all([params.awaiter.awaiting(), server.close()])
           .then(() => resolve())
           .catch(reject)
           .finally(() => clearTimeout(timeout));
