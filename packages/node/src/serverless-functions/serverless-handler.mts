@@ -11,7 +11,6 @@ import { isAbsolute } from 'path';
 import { pathToFileURL } from 'url';
 import { buildToHeaders } from '@edge-runtime/node-utils';
 import { promisify } from 'util';
-import Edge from '@edge-runtime/primitives';
 import type { ServerResponse, IncomingMessage } from 'http';
 import type { VercelProxyResponse } from '../types.js';
 import type { VercelRequest, VercelResponse } from './helpers.js';
