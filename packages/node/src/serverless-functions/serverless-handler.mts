@@ -16,6 +16,14 @@ import type { ServerResponse, IncomingMessage } from 'http';
 import type { VercelProxyResponse } from '../types.js';
 import type { VercelRequest, VercelResponse } from './helpers.js';
 import type { Readable } from 'stream';
+import { Awaiter, Context, reader, symbol } from '../request-context.js';
+
+// eslint-disable-next-line
+Object.defineProperty(globalThis, symbol, {
+  enumerable: false,
+  configurable: true,
+  value: reader,
+});
 
 // @ts-expect-error
 const toHeaders = buildToHeaders({ Headers });
@@ -61,10 +69,20 @@ export const HTTP_METHODS = [
 async function createServerlessServer(
   userCode: ServerlessFunctionSignature
 ): Promise<{ url: URL; onExit: () => Promise<void> }> {
-  const server = createServer(userCode);
+  const awaiter = new Awaiter();
+  const server = createServer(async (req, res) => {
+    return Context.run({ waitUntil: awaiter.waitUntil.bind(awaiter) }, () =>
+      userCode(req, res)
+    );
+  });
+
+  const closeServer = promisify(server.close.bind(server))
+
   return {
     url: await listen(server, { host: '127.0.0.1', port: 0 }),
-    onExit: promisify(server.close.bind(server)),
+    onExit: () => {
+      return Promise.all([awaiter.awaiting(), closeServer()]).then(() => {})
+    },
   };
 }
 

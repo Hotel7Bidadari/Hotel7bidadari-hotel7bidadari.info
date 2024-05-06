@@ -1,6 +1,11 @@
 import { forkDevServer, readMessage } from '../../src/fork-dev-server';
 import { resolve, extname } from 'path';
+import { createServer } from 'http';
+import { listen } from 'async-listen';
+import { once } from 'node:events';
 import { fetch } from 'undici';
+import { promisify } from 'util';
+import { setTimeout } from 'timers/promises';
 
 jest.setTimeout(20 * 1000);
 
@@ -27,9 +32,20 @@ function testForkDevServer(entrypoint: string) {
   });
 }
 
+const teardown: any = [];
+afterAll(() => Promise.all(teardown.map((fn: any) => fn())));
+
+async function withHttpServer(hander: (req: any, res: any) => void) {
+  const server = createServer(hander);
+  teardown.push(promisify(server.close.bind(server)));
+  const address = await listen(server, { port: 0, host: '127.0.0.1' });
+  return address.toString();
+}
+
 async function withDevServer(
   entrypoint: string,
-  fn: (child: any) => Promise<void>
+  fn: (url: string) => Promise<void>,
+  { runningTimeout }: { runningTimeout?: number } = {}
 ) {
   const child = testForkDevServer(entrypoint);
 
@@ -39,17 +55,37 @@ async function withDevServer(
   }
   const { address, port } = result.value;
   const url = `http://${address}:${port}`;
-  return fn(url).finally(() => child.kill(9));
+
+  const start = Date.now();
+
+  return fn(url).finally(async () => {
+    const elapsed = Date.now() - start;
+    if (runningTimeout) await setTimeout(runningTimeout - elapsed);
+    child.send('shutdown', err => {
+      if (err) child.kill(9);
+    });
+    await once(child, 'exit');
+  });
 }
-
-const teardown: any = [];
-
-afterAll(async () => {
-  for (const fn of teardown) await fn();
-});
 
 (NODE_MAJOR < 18 ? describe.skip : describe)('web handlers', () => {
   describe('for node runtime', () => {
+    test('with `waitUntil`', () =>
+      withDevServer(
+        './wait-until-node.js',
+        async (url: string) => {
+          let isWaitUntilCalled = false;
+          const serverUrl = await withHttpServer((_, res) => {
+            isWaitUntilCalled = true;
+            res.end();
+          });
+          await fetch(`${url}/api/wait-until-node?url=${serverUrl}`);
+          await setTimeout(50); // wait a bit for waitUntil resolution
+          expect(isWaitUntilCalled).toBe(true);
+        },
+        { runningTimeout: 300 }
+      ));
+
     test('exporting GET', () =>
       withDevServer('./web-handlers-node.js', async (url: string) => {
         const response = await fetch(`${url}/api/web-handlers-node`, {
