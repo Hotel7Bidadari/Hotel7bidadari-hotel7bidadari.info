@@ -96,7 +96,7 @@ async function withDevServer(
             res.end();
           });
           const response = await fetch(
-            `${url}/api/wait-until-node?url=${serverUrl}`
+            `${url}/api/wait-until-ctx-node?url=${serverUrl}`
           );
           expect(await response.json()).toEqual({ keys: ['waitUntil'] });
           await setTimeout(50); // wait a bit for waitUntil resolution
