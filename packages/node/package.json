@@ -42,6 +42,7 @@
     "undici": "5.26.5"
   },
   "devDependencies": {
+    "@vercel/functions": "workspace:*",
     "@babel/core": "7.24.4",
     "@babel/plugin-transform-modules-commonjs": "7.24.1",
     "@tootallnate/once": "1.1.2",
