@@ -28,21 +28,6 @@ Object.defineProperty(globalThis, symbol, {
 // @ts-expect-error
 const toHeaders = buildToHeaders({ Headers });
 
-class FetchEvent extends Edge.FetchEvent {
-  private static awaiting: Promise<any>[] = [];
-  constructor(request: Request) {
-    super(request);
-    const originalWaitUntil = this.waitUntil;
-    this.waitUntil = (promise: Promise<any>) => {
-      FetchEvent.awaiting.push(promise);
-      originalWaitUntil.call(this, promise);
-    };
-  }
-  static waitUntil() {
-    return Promise.all(FetchEvent.awaiting);
-  }
-}
-
 type ServerlessServerOptions = {
   shouldAddHelpers: boolean;
   mode: 'streaming' | 'buffer';
@@ -67,22 +52,18 @@ export const HTTP_METHODS = [
 ];
 
 async function createServerlessServer(
-  userCode: ServerlessFunctionSignature
+  userCode: ServerlessFunctionSignature,
+  awaiter: Awaiter
 ): Promise<{ url: URL; onExit: () => Promise<void> }> {
-  const awaiter = new Awaiter();
   const server = createServer(async (req, res) => {
     return Context.run({ waitUntil: awaiter.waitUntil.bind(awaiter) }, () =>
       userCode(req, res)
     );
   });
 
-  const closeServer = promisify(server.close.bind(server))
-
   return {
     url: await listen(server, { host: '127.0.0.1', port: 0 }),
-    onExit: () => {
-      return Promise.all([awaiter.awaiting(), closeServer()]).then(() => {})
-    },
+    onExit: promisify(server.close.bind(server)),
   };
 }
 
@@ -127,8 +108,18 @@ export async function createServerlessEventHandler(
   handler: (request: IncomingMessage) => Promise<VercelProxyResponse>;
   onExit: () => Promise<void>;
 }> {
+  const awaiter = new Awaiter();
+
+  class FetchEvent extends Edge.FetchEvent {
+    constructor(request: Request) {
+      super(request);
+      this.waitUntil = (promise: Promise<any>) => {
+        awaiter.waitUntil(promise);
+      };
+    }
+  }
   const userCode = await compileUserCode(entrypointPath, FetchEvent, options);
-  const server = await createServerlessServer(userCode);
+  const server = await createServerlessServer(userCode, awaiter);
   const isStreaming = options.mode === 'streaming';
 
   const handler = async function (
@@ -168,7 +159,7 @@ export async function createServerlessEventHandler(
         resolve();
       }, WAIT_UNTIL_TIMEOUT_MS);
 
-      Promise.all([FetchEvent.waitUntil(), server.onExit()])
+      Promise.all([awaiter.awaiting(), server.onExit()])
         .then(() => resolve())
         .catch(reject)
         .finally(() => clearTimeout(timeout));

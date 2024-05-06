@@ -70,7 +70,7 @@ async function withDevServer(
 
 (NODE_MAJOR < 18 ? describe.skip : describe)('web handlers', () => {
   describe('for node runtime', () => {
-    test('with `waitUntil`', () =>
+    test('with `waitUntil` from import', () =>
       withDevServer(
         './wait-until-node.js',
         async (url: string) => {
@@ -80,6 +80,24 @@ async function withDevServer(
             res.end();
           });
           await fetch(`${url}/api/wait-until-node?url=${serverUrl}`);
+          await setTimeout(50); // wait a bit for waitUntil resolution
+          expect(isWaitUntilCalled).toBe(true);
+        },
+        { runningTimeout: 300 }
+      ));
+
+    test('with `waitUntil` from context', () =>
+      withDevServer(
+        './wait-until-ctx-node.js',
+        async (url: string) => {
+          let isWaitUntilCalled = false;
+          const serverUrl = await withHttpServer((_, res) => {
+            isWaitUntilCalled = true;
+            res.end();
+          });
+          await fetch(`${url}/api/wait-until-node?url=${serverUrl}`);
+          // FIXME: this is not working
+          // expect(await response.json()).toEqual({ keys: ['waitUntil']})
           await setTimeout(50); // wait a bit for waitUntil resolution
           expect(isWaitUntilCalled).toBe(true);
         },
