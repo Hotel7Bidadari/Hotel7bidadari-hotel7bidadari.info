@@ -69,7 +69,7 @@ async function createServerlessServer(
 
 async function compileUserCode(
   entrypointPath: string,
-  FetchEvent: typeof Edge.FetchEvent,
+  awaiter: Awaiter,
   options: ServerlessServerOptions
 ) {
   const id = isAbsolute(entrypointPath)
@@ -91,7 +91,7 @@ async function compileUserCode(
       );
     }
     const { createWebExportsHandler } = await import('./helpers-web.js');
-    const getWebExportsHandler = createWebExportsHandler(FetchEvent);
+    const getWebExportsHandler = createWebExportsHandler(awaiter);
     return getWebExportsHandler(listener, HTTP_METHODS);
   }
 
@@ -109,16 +109,7 @@ export async function createServerlessEventHandler(
   onExit: () => Promise<void>;
 }> {
   const awaiter = new Awaiter();
-
-  class FetchEvent extends Edge.FetchEvent {
-    constructor(request: Request) {
-      super(request);
-      this.waitUntil = (promise: Promise<any>) => {
-        awaiter.waitUntil(promise);
-      };
-    }
-  }
-  const userCode = await compileUserCode(entrypointPath, FetchEvent, options);
+  const userCode = await compileUserCode(entrypointPath, awaiter, options);
   const server = await createServerlessServer(userCode, awaiter);
   const isStreaming = options.mode === 'streaming';
 

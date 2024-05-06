@@ -1,9 +1,9 @@
 import type { ServerResponse, IncomingMessage } from 'http';
 import type { NodeHandler } from '@edge-runtime/node-utils';
 import { buildToNodeHandler } from '@edge-runtime/node-utils';
-import Edge from '@edge-runtime/primitives';
+import { Awaiter } from '../request-context.js';
 
-export const createWebExportsHandler = (FetchEvent: typeof Edge.FetchEvent) => {
+export const createWebExportsHandler = (awaiter: Awaiter) => {
   const webHandlerToNodeHandler = buildToNodeHandler(
     {
       Headers,
@@ -15,7 +15,12 @@ export const createWebExportsHandler = (FetchEvent: typeof Edge.FetchEvent) => {
         }
       },
       Uint8Array,
-      FetchEvent,
+      // @ts-expect-error Property 'waitUntil' is missing in type 'FetchEvent'
+      FetchEvent: class {
+        waitUntil = (promise: Promise<any>) => {
+          awaiter.waitUntil(promise);
+        };
+      },
     },
     { defaultOrigin: 'https://vercel.com' }
   );

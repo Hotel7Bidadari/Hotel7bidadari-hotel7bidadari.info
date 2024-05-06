@@ -95,9 +95,10 @@ async function withDevServer(
             isWaitUntilCalled = true;
             res.end();
           });
-          await fetch(`${url}/api/wait-until-node?url=${serverUrl}`);
-          // FIXME: this is not working
-          // expect(await response.json()).toEqual({ keys: ['waitUntil']})
+          const response = await fetch(
+            `${url}/api/wait-until-node?url=${serverUrl}`
+          );
+          expect(await response.json()).toEqual({ keys: ['waitUntil'] });
           await setTimeout(50); // wait a bit for waitUntil resolution
           expect(isWaitUntilCalled).toBe(true);
         },

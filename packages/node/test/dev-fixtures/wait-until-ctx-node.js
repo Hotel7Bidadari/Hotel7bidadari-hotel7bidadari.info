@@ -8,5 +8,5 @@ export function GET(request, ctx) {
   const url = searchParams.get('url');
 
   ctx.waitUntil(fetch(url));
-  return Response.json({ key: Object.keys(ctx) });
+  return Response.json({ keys: Object.keys(ctx) });
 }
